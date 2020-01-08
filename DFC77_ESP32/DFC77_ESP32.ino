@@ -1,108 +1,100 @@
-arduino esp8266
 /*
   based on this sketch: https://github.com/aknik/ESP32/blob/master/DFC77/DFC77_esp32_Solo.ino
 
-  This is an example file for using the time function in ESP8266 or ESP32 tu get NTP time
-  It offers two functions:
+  Some functions are inspired by work of G6EJD ( https://www.youtube.com/channel/UCgtlqH_lkMdIa4jZLItcsTg )
 
-  - getNTPtime(struct tm * info, uint32_t ms) where info is a structure which contains time
-  information and ms is the time the service waits till it gets a response from NTP.
-  Each time you cann this function it calls NTP over the net.
+  Refactor by DeltaZero, converts to syncronous, added "cron"
 
-  If you do not want to call an NTP service every second, you can use
-  - getTimeReducedTraffic(int ms) where ms is the the time between two physical NTP server calls. Betwwn these calls,
-  the time structure is updated with the (inaccurate) timer. If you call NTP every few minutes you should be ok
+  Every clock I know starts to listen to the radio at aproximatelly the hour o'clock, so cron takes this into account
 
-  The time structure is called tm and has teh following values:
-
-  Definition of struct tm:
-  Member  Type  Meaning Range
-  tm_sec  int seconds after the minute  0-61*
-  tm_min  int minutes after the hour  0-59
-  tm_hour int hours since midnight  0-23
-  tm_mday int day of the month  1-31
-  tm_mon  int months since January  0-11
-  tm_year int years since 1900
-  tm_wday int days since Sunday 0-6
-  tm_yday int days since January 1  0-365
-  tm_isdst  int Daylight Saving Time flag
-
-  because the values are somhow akwardly defined, I introduce a function makeHumanreadable() where all values are adjusted according normal numbering.
-  e.g. January is month 1 and not 0 And Sunday or monday is weekday 1 not 0 (according definition of MONDAYFIRST)
-
-  Showtime is an example on how you can use the time in your sketch
-
-  The functions are inspired by work of G6EJD ( https://www.youtube.com/channel/UCgtlqH_lkMdIa4jZLItcsTg )
+  Alarm clocks from Junghans: Every hour (innecesery)
+  Weather Station from Brigmton: 2 and 3 AM
+  Chinesse movements and derivatives: 1 o'clock AM
 */
 
 
 #include <WiFi.h>
 #include <Ticker.h>
 #include <Time.h>
-#include <credentials.h>
-
-const char* ssid = mySSID;
-const char* password = myPASSWORD;
+//#include "soc/rtc_cntl_reg.h"
 
 
-Ticker tickerSetLow;
+#include "credentials.h"  // If you put this file in the same forlder that the rest of the tabs, then use "" to delimiter,
+                          // otherwise use <> or comment it and write your credentials directly on code
+                          // const char* ssid = "YourOwnSSID";
+                          // const char* password = "YourSoSecretPassword";
+                          
+#define LEDBUILTIN 5      // This is the pin for a Wemos board
+#define ANTENNAPIN 15     // You MUST adapt this pin to your preferences
+// #define TESTMODE       // Uncomment this line to bypass de cron and have the transmitter on all the time
 
-const byte ledPin = 4;  // built-in LED
+// cron (if you choose the correct values you can even run on batteries)
+// If you choose really bad this minutes, everything goes wrong, so minuteToWakeUp must be greater than minuteToSleep
+#define minuteToWakeUp  55 // Every hoursToWakeUp at this minute the ESP32 wakes up get time and star to transmit
+#define minuteToSleep   8 // If it is running at this minute thengoes to sleep and waits until minuteToWakeUp
 
-//complete array of pulses for three minutes
-//0 = no pulse, 1=100msec, 2=200msec
+byte hoursToWakeUp[] = {0,1,2,3};
+                      // When the ESP32 wakes up, check if the actual hour is in the list and
+                      // runs or goes to sleep until next minuteToWakeUp
+
+Ticker tickerDecisec; // TBD at 100ms
+
+//complete array of pulses for a minute
+//0 = no pulse, 1=100ms, 2=200ms
 int impulseArray[60];
 int impulseCount = 0;
 int actualHours, actualMinutes, actualSecond, actualDay, actualMonth, actualYear, DayOfW;
 
-const char* NTP_SERVER = "ch.pool.ntp.org";
+const char* ntpServer = "es.pool.ntp.org"; // enter your closer pool or pool.ntp.org
 const char* TZ_INFO    = "CET-1CEST-2,M3.5.0/02:00:00,M10.5.0/03:00:00";  // enter your time zone (https://remotemonitoringsystems.ca/time-zone-abbreviations.php)
 
 struct tm timeinfo;
-unsigned long lastEntryLED, lastEntryTime;
-long unsigned lastNTPtime;
-time_t now;
-
 
 void setup() {
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+  //WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
   Serial.begin(115200);
-  Serial.println("\n\nDCF77 transmitter\n");
-  WiFi.disconnect();
-  delay(1000);
+  Serial.println();
+  Serial.println("DCF77 transmitter");
 
-  tickerSetLow.attach_ms(100, DcfOut );
+  ledcSetup(0, 77500, 8); // DCF77 frequency
+  ledcAttachPin(ANTENNAPIN, 0); // This Pin, or another one you choose, has to be attached to the antenna
 
-  ledcSetup(0, 77500, 8);
-  ledcAttachPin(5, 0); // Pin 5 has to be attached to the antenna
+  pinMode (LEDBUILTIN, OUTPUT);
+  digitalWrite (LEDBUILTIN, LOW); // LOW if LEDBUILTIN is inverted like in Wemos boards
 
-  pinMode (ledPin, OUTPUT);
-  digitalWrite (ledPin, LOW);
+  WiFi_on();
+  getNTP();
+  WiFi_off();
+  show_time();
+  
+  CodeTime(); // first conversion just for cronCheck
+#ifndef TESTMODE
+  cronCheck(); // first check before start anything
+#else
+        Serial.println("TEST MODE NO CRON!!!");
+#endif
 
-  WiFi.begin(ssid, password);
+  // sync to the start of a second
+  Serial.print("Syncing... ");
+  int startSecond = timeinfo.tm_sec;
+  long count = 0;
+  do {
+    count++;
+    if(!getLocalTime(&timeinfo)){
+      Serial.println("Error obtaining time...");
+      delay(3000);
+      ESP.restart();
+    }
+  } while (startSecond == timeinfo.tm_sec);
 
-  int counter;
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(200);
-    if (counter > 10) ESP.restart();
-    Serial.print ( "." );
-  }
-
-  Serial.println("\n\nWiFi connected\n\n");
-
-  configTime(0, 0, NTP_SERVER);  // See https://github.com/nayarsystems/posix_tz_db/blob/master/zones.csv for Timezone codes for your region
-  setenv("TZ", TZ_INFO, 1);
-  if (getNTPtime(10)) {  // wait up to 10 sec to sync
-    Serial.println(&timeinfo, "Time now: %B %d %Y %H:%M:%S (%A)");
-  } else {
-    Serial.println("Time not set");
-    ESP.restart();
-  }
-  showTime(&timeinfo);
+  tickerDecisec.attach_ms(100, DcfOut); // from now on calls DcfOut every 100ms
+  Serial.print("Ok ");
+  Serial.println(count);
 }
 
 void loop() {
-  getTimeReducedTraffic(120);
-  CodeTime();
+  // There is no code inside the loop. This is a syncronous program driven by the Ticker
 }
 
 void CodeTime() {
@@ -117,17 +109,22 @@ void CodeTime() {
     actualMinutes = 0;
     actualHours++;
   }
-  actualSecond = timeinfo.tm_sec;
+  actualSecond = timeinfo.tm_sec + 1; // Empiric adjust
+  if (actualSecond == 60) actualSecond = 0;
 
   int n, Tmp, TmpIn;
   int ParityCount = 0;
 
   //we put the first 20 bits of each minute at a logical zero value
   for (n = 0; n < 20; n++) impulseArray[n] = 1;
-
-  // set CET bit
-  impulseArray[18] = 2;
-
+  
+  // set DST bit
+  if (timeinfo.tm_isdst == 0) {
+    impulseArray[18] = 2; // CET or DST OFF
+  } else {
+    impulseArray[17] = 2; // CEST or DST ON
+  }
+  
   //bit 20 must be 1 to indicate active time
   impulseArray[20] = 2;
 
@@ -138,7 +135,7 @@ void CodeTime() {
     impulseArray[n] = Tmp + 1;
     ParityCount += Tmp;
     TmpIn >>= 1;
-  };
+  }
   if ((ParityCount & 1) == 0)
     impulseArray[28] = 1;
   else
@@ -197,7 +194,7 @@ void CodeTime() {
     impulseArray[58] = 2;
 
   //last missing pulse
-  impulseArray[59] = 0;
+  impulseArray[59] = 0; // No pulse
 }
 
 int Bin2Bcd(int dato) {
@@ -209,94 +206,49 @@ int Bin2Bcd(int dato) {
   return msb + lsb;
 }
 
-
-
 void DcfOut() {
   switch (impulseCount++) {
     case 0:
-
       if (impulseArray[actualSecond] != 0) {
-        digitalWrite(ledPin, LOW);
+        digitalWrite(LEDBUILTIN, LOW);
         ledcWrite(0, 0);
       }
       break;
     case 1:
       if (impulseArray[actualSecond] == 1) {
-        digitalWrite(ledPin, HIGH);
+        digitalWrite(LEDBUILTIN, HIGH);
         ledcWrite(0, 127);
       }
       break;
     case 2:
-      digitalWrite(ledPin, HIGH);
+      digitalWrite(LEDBUILTIN, HIGH);
       ledcWrite(0, 127);
       break;
     case 9:
       impulseCount = 0;
 
-
       if (actualSecond == 1 || actualSecond == 15 || actualSecond == 21  || actualSecond == 29 ) Serial.print("-");
       if (actualSecond == 36  || actualSecond == 42 || actualSecond == 45  || actualSecond == 50 ) Serial.print("-");
       if (actualSecond == 28  || actualSecond == 35  || actualSecond == 58 ) Serial.print("P");
-
 
       if (impulseArray[actualSecond] == 1) Serial.print("0");
       if (impulseArray[actualSecond] == 2) Serial.print("1");
 
       if (actualSecond == 59 ) {
         Serial.println();
-        showTime(&timeinfo);
+        show_time();
+#ifndef TESTMODE
+        cronCheck();
+#else
+        Serial.println("TEST MODE NO CRON!!!");
+#endif
       }
       break;
-  };
-};
-
-bool getNTPtime(int sec) {
-  char time_output[30];
-
-  {
-    uint32_t start = millis();
-    do {
-      time(&now);
-      localtime_r(&now, &timeinfo);
-      Serial.print(".");
-      delay(10);
-    } while (((millis() - start) <= (1000 * sec)) && (timeinfo.tm_year < (2016 - 1900)));
-    if (timeinfo.tm_year <= (2016 - 1900)) return false;  // the NTP call was not successful
-    Serial.print("now ");  Serial.println(now);
-    strftime(time_output, 30, "%a  %d-%m-%y %T", localtime(&now));
-    Serial.println(time_output);
-    Serial.println();
   }
-  return true;
-}
-
-void getTimeReducedTraffic(int sec) {
-  tm *ptm;
-  if ((millis() - lastEntryTime) < (1000 * sec)) {
-    now = lastNTPtime + (int)(millis() - lastEntryTime) / 1000;
-  } else {
-    lastEntryTime = millis();
-    lastNTPtime = time(&now);
-    now = lastNTPtime;
-    Serial.println("Get NTP time");
+  if(!getLocalTime(&timeinfo)){
+    Serial.println("Error obtaining time...");
+    delay(3000);
+    ESP.restart();
   }
-  ptm = localtime(&now);
-  timeinfo = *ptm;
-}
-
-void showTime(tm *localTime) {
-  Serial.print(localTime->tm_mday);
-  Serial.print('/');
-  Serial.print(localTime->tm_mon + 1);
-  Serial.print('/');
-  Serial.print(localTime->tm_year - 100);
-  Serial.print('-');
-  Serial.print(localTime->tm_hour);
-  Serial.print(':');
-  Serial.print(localTime->tm_min);
-  Serial.print(':');
-  Serial.print(localTime->tm_sec);
-  Serial.print(" Day of Week ");
-  if (localTime->tm_mday = 0) localTime->tm_mday = 7;
-  Serial.println(localTime->tm_wday);
+  CodeTime();
 }
