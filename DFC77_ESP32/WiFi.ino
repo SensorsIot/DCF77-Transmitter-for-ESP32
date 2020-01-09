@@ -4,8 +4,8 @@ void WiFi_on() {
   WiFi.begin(ssid, password);
   int counter = 0;
   while (WiFi.status() != WL_CONNECTED) {
-    delay(200);
-    if (counter > 10) ESP.restart();
+    delay(500);
+    if (counter > 20) ESP.restart();
     Serial.print ( "." );
     counter++;
   }
