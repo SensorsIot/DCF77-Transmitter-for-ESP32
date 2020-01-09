@@ -3,8 +3,8 @@
 
   Some functions are inspired by work of G6EJD ( https://www.youtube.com/channel/UCgtlqH_lkMdIa4jZLItcsTg )
 
-  Refactor by DeltaZero, converts to syncronous, added "cron"
-
+  Refactor by DeltaZero, converts to syncronous, added "cron" that you can bypass, see line 29
+                                                    The cron does not start until 10 minutes from reset
   Every clock I know starts to listen to the radio at aproximatelly the hour o'clock, so cron takes this into account
 
   Alarm clocks from Junghans: Every hour (innecesery)
@@ -16,7 +16,7 @@
 #include <WiFi.h>
 #include <Ticker.h>
 #include <Time.h>
-//#include "soc/rtc_cntl_reg.h"
+
 
 
 #include "credentials.h"  // If you put this file in the same forlder that the rest of the tabs, then use "" to delimiter,
@@ -26,14 +26,15 @@
                           
 #define LEDBUILTIN 5      // This is the pin for a Wemos board
 #define ANTENNAPIN 15     // You MUST adapt this pin to your preferences
-// #define TESTMODE       // Uncomment this line to bypass de cron and have the transmitter on all the time
+// #define CONTINUOUSMODE // Uncomment this line to bypass de cron and have the transmitter on all the time
 
 // cron (if you choose the correct values you can even run on batteries)
 // If you choose really bad this minutes, everything goes wrong, so minuteToWakeUp must be greater than minuteToSleep
 #define minuteToWakeUp  55 // Every hoursToWakeUp at this minute the ESP32 wakes up get time and star to transmit
-#define minuteToSleep   8 // If it is running at this minute thengoes to sleep and waits until minuteToWakeUp
+#define minuteToSleep   8 // If it is running at this minute then goes to sleep and waits until minuteToWakeUp
 
-byte hoursToWakeUp[] = {0,1,2,3};
+
+byte hoursToWakeUp[] = {0,1,2,3}; // you can add more hours to adapt to your needs
                       // When the ESP32 wakes up, check if the actual hour is in the list and
                       // runs or goes to sleep until next minuteToWakeUp
 
@@ -44,6 +45,7 @@ Ticker tickerDecisec; // TBD at 100ms
 int impulseArray[60];
 int impulseCount = 0;
 int actualHours, actualMinutes, actualSecond, actualDay, actualMonth, actualYear, DayOfW;
+long dontGoToSleep = 0;
 
 const char* ntpServer = "es.pool.ntp.org"; // enter your closer pool or pool.ntp.org
 const char* TZ_INFO    = "CET-1CEST-2,M3.5.0/02:00:00,M10.5.0/03:00:00";  // enter your time zone (https://remotemonitoringsystems.ca/time-zone-abbreviations.php)
@@ -52,10 +54,12 @@ struct tm timeinfo;
 
 void setup() {
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
-  //WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
+
   Serial.begin(115200);
   Serial.println();
   Serial.println("DCF77 transmitter");
+
+  if (esp_sleep_get_wakeup_cause() == 0) dontGoToSleep = millis();
 
   ledcSetup(0, 77500, 8); // DCF77 frequency
   ledcAttachPin(ANTENNAPIN, 0); // This Pin, or another one you choose, has to be attached to the antenna
@@ -69,10 +73,10 @@ void setup() {
   show_time();
   
   CodeTime(); // first conversion just for cronCheck
-#ifndef TESTMODE
-  cronCheck(); // first check before start anything
+#ifndef CONTINUOUSMODE
+  if ((dontGoToSleep == 0) or ((dontGoToSleep + 600000) < millis())) cronCheck(); // first check before start anything
 #else
-        Serial.println("TEST MODE NO CRON!!!");
+  Serial.println("CONTINUOUS MODE NO CRON!!!");
 #endif
 
   // sync to the start of a second
@@ -237,10 +241,10 @@ void DcfOut() {
       if (actualSecond == 59 ) {
         Serial.println();
         show_time();
-#ifndef TESTMODE
-        cronCheck();
+#ifndef CONTINUOUSMODE
+        if ((dontGoToSleep == 0) or ((dontGoToSleep + 600000) < millis())) cronCheck();
 #else
-        Serial.println("TEST MODE NO CRON!!!");
+        Serial.println("CONTINUOUS MODE NO CRON!!!");
 #endif
       }
       break;
