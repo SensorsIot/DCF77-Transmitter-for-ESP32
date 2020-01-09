@@ -113,7 +113,7 @@ void CodeTime() {
     actualMinutes = 0;
     actualHours++;
   }
-  actualSecond = timeinfo.tm_sec + 1; // Empiric adjust
+  actualSecond = timeinfo.tm_sec; 
   if (actualSecond == 60) actualSecond = 0;
 
   int n, Tmp, TmpIn;
