@@ -4,7 +4,7 @@
   Some functions are inspired by work of G6EJD ( https://www.youtube.com/channel/UCgtlqH_lkMdIa4jZLItcsTg )
 
   Refactor by DeltaZero, converts to syncronous, added "cron" that you can bypass, see line 29
-                                                    The cron does not start until 10 minutes from reset
+                                                    The cron does not start until 10 minutes from reset (see constant onTimeAfterReset)
   Every clock I know starts to listen to the radio at aproximatelly the hour o'clock, so cron takes this into account
 
   Alarm clocks from Junghans: Every hour (innecesery)
@@ -46,6 +46,7 @@ int impulseArray[60];
 int impulseCount = 0;
 int actualHours, actualMinutes, actualSecond, actualDay, actualMonth, actualYear, DayOfW;
 long dontGoToSleep = 0;
+const long onTimeAfterReset = 600000; // Ten minutes
 
 const char* ntpServer = "es.pool.ntp.org"; // enter your closer pool or pool.ntp.org
 const char* TZ_INFO    = "CET-1CEST-2,M3.5.0/02:00:00,M10.5.0/03:00:00";  // enter your time zone (https://remotemonitoringsystems.ca/time-zone-abbreviations.php)
@@ -74,7 +75,7 @@ void setup() {
   
   CodeTime(); // first conversion just for cronCheck
 #ifndef CONTINUOUSMODE
-  if ((dontGoToSleep == 0) or ((dontGoToSleep + 600000) < millis())) cronCheck(); // first check before start anything
+  if ((dontGoToSleep == 0) or ((dontGoToSleep + onTimeAfterReset) < millis())) cronCheck(); // first check before start anything
 #else
   Serial.println("CONTINUOUS MODE NO CRON!!!");
 #endif
@@ -113,7 +114,7 @@ void CodeTime() {
     actualMinutes = 0;
     actualHours++;
   }
-  actualSecond = timeinfo.tm_sec + 1; // Empiric adjust
+  actualSecond = timeinfo.tm_sec; 
   if (actualSecond == 60) actualSecond = 0;
 
   int n, Tmp, TmpIn;
@@ -242,7 +243,7 @@ void DcfOut() {
         Serial.println();
         show_time();
 #ifndef CONTINUOUSMODE
-        if ((dontGoToSleep == 0) or ((dontGoToSleep + 600000) < millis())) cronCheck();
+        if ((dontGoToSleep == 0) or ((dontGoToSleep + onTimeAfterReset) < millis())) cronCheck();
 #else
         Serial.println("CONTINUOUS MODE NO CRON!!!");
 #endif
