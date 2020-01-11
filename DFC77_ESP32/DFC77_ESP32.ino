@@ -26,7 +26,7 @@
                           
 #define LEDBUILTIN 5      // This is the pin for a Wemos board
 #define ANTENNAPIN 15     // You MUST adapt this pin to your preferences
-// #define CONTINUOUSMODE // Uncomment this line to bypass de cron and have the transmitter on all the time
+#define CONTINUOUSMODE // Uncomment this line to bypass de cron and have the transmitter on all the time
 
 // cron (if you choose the correct values you can even run on batteries)
 // If you choose really bad this minutes, everything goes wrong, so minuteToWakeUp must be greater than minuteToSleep
@@ -47,6 +47,7 @@ int impulseCount = 0;
 int actualHours, actualMinutes, actualSecond, actualDay, actualMonth, actualYear, DayOfW;
 long dontGoToSleep = 0;
 const long onTimeAfterReset = 600000; // Ten minutes
+int timeRunningContinuous = 0;
 
 const char* ntpServer = "es.pool.ntp.org"; // enter your closer pool or pool.ntp.org
 const char* TZ_INFO    = "CET-1CEST-2,M3.5.0/02:00:00,M10.5.0/03:00:00";  // enter your time zone (https://remotemonitoringsystems.ca/time-zone-abbreviations.php)
@@ -246,6 +247,8 @@ void DcfOut() {
         if ((dontGoToSleep == 0) or ((dontGoToSleep + onTimeAfterReset) < millis())) cronCheck();
 #else
         Serial.println("CONTINUOUS MODE NO CRON!!!");
+        timeRunningContinuous++;
+        if (timeRunningContinuous > 360) ESP.restart(); // 6 hours running, then restart all over
 #endif
       }
       break;
