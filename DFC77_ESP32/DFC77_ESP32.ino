@@ -24,8 +24,8 @@
                           // const char* ssid = "YourOwnSSID";
                           // const char* password = "YourSoSecretPassword";
                           
-#define LEDBUILTIN 5      // This is the pin for a Wemos board
-#define ANTENNAPIN 15     // You MUST adapt this pin to your preferences
+#define LEDBUILTIN 5      // LED pin, LED flashes when antenna is transmitting
+#define ANTENNAPIN 15     // Antenna pin. Connect antenna from here to ground, use a 1k resistor to limit transmitting power. A slightly tuned ferrite antenna gets around 3 meters and a wire loop may work if close enough.
 #define CONTINUOUSMODE // Uncomment this line to bypass de cron and have the transmitter on all the time
 
 // cron (if you choose the correct values you can even run on batteries)
