@@ -63,8 +63,7 @@ void setup() {
 
   if (esp_sleep_get_wakeup_cause() == 0) dontGoToSleep = millis();
 
-  ledcSetup(0, 77500, 8); // DCF77 frequency
-  ledcAttachPin(ANTENNAPIN, 0); // This Pin, or another one you choose, has to be attached to the antenna
+  ledcAttach(ANTENNAPIN, 77500, 8); // Set pin PWM, 77500hz DCF freq, resolution of 8bit
 
   pinMode (LEDBUILTIN, OUTPUT);
   digitalWrite (LEDBUILTIN, LOW); // LOW if LEDBUILTIN is inverted like in Wemos boards
@@ -217,18 +216,18 @@ void DcfOut() {
     case 0:
       if (impulseArray[actualSecond] != 0) {
         digitalWrite(LEDBUILTIN, LOW);
-        ledcWrite(0, 0);
+        ledcWrite(ANTENNAPIN, 0);
       }
       break;
     case 1:
       if (impulseArray[actualSecond] == 1) {
         digitalWrite(LEDBUILTIN, HIGH);
-        ledcWrite(0, 127);
+        ledcWrite(ANTENNAPIN, 127);
       }
       break;
     case 2:
       digitalWrite(LEDBUILTIN, HIGH);
-      ledcWrite(0, 127);
+      ledcWrite(ANTENNAPIN, 127);
       break;
     case 9:
       impulseCount = 0;
