@@ -24,8 +24,8 @@
                           // const char* ssid = "YourOwnSSID";
                           // const char* password = "YourSoSecretPassword";
                           
-#define LEDBUILTIN 5      // This is the pin for a Wemos board
-#define ANTENNAPIN 15     // You MUST adapt this pin to your preferences
+#define LEDBUILTIN 5      // LED pin, LED flashes when antenna is transmitting
+#define ANTENNAPIN 15     // Antenna pin. Connect antenna from here to ground, use a 1k resistor to limit transmitting power. A slightly tuned ferrite antenna gets around 3 meters and a wire loop may work if close enough.
 #define CONTINUOUSMODE // Uncomment this line to bypass de cron and have the transmitter on all the time
 
 // cron (if you choose the correct values you can even run on batteries)
@@ -63,8 +63,7 @@ void setup() {
 
   if (esp_sleep_get_wakeup_cause() == 0) dontGoToSleep = millis();
 
-  ledcSetup(0, 77500, 8); // DCF77 frequency
-  ledcAttachPin(ANTENNAPIN, 0); // This Pin, or another one you choose, has to be attached to the antenna
+  ledcAttach(ANTENNAPIN, 77500, 8); // Set pin PWM, 77500hz DCF freq, resolution of 8bit
 
   pinMode (LEDBUILTIN, OUTPUT);
   digitalWrite (LEDBUILTIN, LOW); // LOW if LEDBUILTIN is inverted like in Wemos boards
@@ -217,18 +216,18 @@ void DcfOut() {
     case 0:
       if (impulseArray[actualSecond] != 0) {
         digitalWrite(LEDBUILTIN, LOW);
-        ledcWrite(0, 0);
+        ledcWrite(ANTENNAPIN, 0);
       }
       break;
     case 1:
       if (impulseArray[actualSecond] == 1) {
         digitalWrite(LEDBUILTIN, HIGH);
-        ledcWrite(0, 127);
+        ledcWrite(ANTENNAPIN, 127);
       }
       break;
     case 2:
       digitalWrite(LEDBUILTIN, HIGH);
-      ledcWrite(0, 127);
+      ledcWrite(ANTENNAPIN, 127);
       break;
     case 9:
       impulseCount = 0;
