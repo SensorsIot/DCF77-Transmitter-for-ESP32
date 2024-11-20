@@ -61,6 +61,17 @@ void setup() {
   Serial.println();
   Serial.println("DCF77 transmitter");
 
+ /*
+can be added to save energy when battery-operated
+
+if(setCpuFrequencyMhz(80)){
+Serial.print("CPU frequency set @");
+Serial.print(getCpuFrequencyMhz());
+Serial.println("Mhz");
+}
+else
+Serial.println("Fail to set cpu frequency");
+*/
   if (esp_sleep_get_wakeup_cause() == 0) dontGoToSleep = millis();
 
   ledcAttach(ANTENNAPIN, 77500, 8); // Set pin PWM, 77500hz DCF freq, resolution of 8bit
