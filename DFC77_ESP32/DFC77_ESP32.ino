@@ -114,17 +114,20 @@ void loop() {
 }
 
 void CodeTime() {
-  DayOfW = timeinfo.tm_wday;
+  // DCF77 announces the next minute. Advance the timestamp so the complete
+  // date and DST state roll over together, without changing the current second.
+  struct tm nextMinute = timeinfo;
+  nextMinute.tm_sec = 0;
+  time_t nextMinuteEpoch = mktime(&nextMinute) + 60;
+  localtime_r(&nextMinuteEpoch, &nextMinute);
+
+  DayOfW = nextMinute.tm_wday;
   if (DayOfW == 0) DayOfW = 7;
-  actualDay = timeinfo.tm_mday;
-  actualMonth = timeinfo.tm_mon + 1;
-  actualYear = timeinfo.tm_year - 100;
-  actualHours = timeinfo.tm_hour;
-  actualMinutes = timeinfo.tm_min + 1; // DCF77 transmitts the next minute
-  if (actualMinutes >= 60) {
-    actualMinutes = 0;
-    actualHours++;
-  }
+  actualDay = nextMinute.tm_mday;
+  actualMonth = nextMinute.tm_mon + 1;
+  actualYear = nextMinute.tm_year - 100;
+  actualHours = nextMinute.tm_hour;
+  actualMinutes = nextMinute.tm_min;
   actualSecond = timeinfo.tm_sec; 
   if (actualSecond == 60) actualSecond = 0;
 
@@ -135,7 +138,7 @@ void CodeTime() {
   for (n = 0; n < 20; n++) impulseArray[n] = 1;
   
   // set DST bit
-  if (timeinfo.tm_isdst == 0) {
+  if (nextMinute.tm_isdst == 0) {
     impulseArray[18] = 2; // CET or DST OFF
   } else {
     impulseArray[17] = 2; // CEST or DST ON
